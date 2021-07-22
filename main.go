@@ -109,7 +109,6 @@ func main(){
 				globalConfig.replaceStr = append(globalConfig.replaceStr, []string{
 					u.Scheme+`://`+u.Host,
 					`//`+u.Host,
-					u.Host,
 				}...)
 				globalConfig.replaceStr = relist(globalConfig.replaceStr)
 				urlMap[u.Path] = append(urlMap[u.Path], RequestResponse{
