@@ -7,29 +7,32 @@ import (
 
 type Har struct {
 	Log struct {
+		Pages   []struct {
+			Title string `json:"title"`
+		} `json:"pages"`
 		Entries []struct {
 			Request    struct {
 				Method      string `json:"method"`
 				URL         string `json:"url"`
-				HTTPVersion string `json:"httpVersion"`
+				// HTTPVersion string `json:"httpVersion"`
 				Headers     []struct {
 					Name  string `json:"name"`
 					Value string `json:"value"`
 				} `json:"headers"`
-				QueryString []interface{} `json:"queryString"`
-				Cookies     []struct {
-					Name     string    `json:"name"`
-					Value    string    `json:"value"`
-					Path     string    `json:"path"`
-					Domain   string    `json:"domain"`
-					Expires  time.Time `json:"expires"`
-					HTTPOnly bool      `json:"httpOnly"`
-					Secure   bool      `json:"secure"`
-				} `json:"cookies"`
-				HeadersSize int `json:"headersSize"`
-				BodySize    int `json:"bodySize"`
+				// QueryString []interface{} `json:"queryString"`
+				// Cookies     []struct {
+				// 	Name     string    `json:"name"`
+				// 	Value    string    `json:"value"`
+				// 	Path     string    `json:"path"`
+				// 	Domain   string    `json:"domain"`
+				// 	Expires  time.Time `json:"expires"`
+				// 	HTTPOnly bool      `json:"httpOnly"`
+				// 	Secure   bool      `json:"secure"`
+				// } `json:"cookies"`
+				// HeadersSize int `json:"headersSize"`
+				// BodySize    int `json:"bodySize"`
 				PostData    struct {
-					MimeType string `json:"mimeType"`
+					// MimeType string `json:"mimeType"`
 					Text     string `json:"text"`
 				} `json:"postData"`
 			} `json:"request"`
@@ -40,8 +43,8 @@ type Har struct {
 
 type harResponse struct {
 	Status      int    `json:"status"`
-	StatusText  string `json:"statusText"`
-	HTTPVersion string `json:"httpVersion"`
+	// StatusText  string `json:"statusText"`
+	// HTTPVersion string `json:"httpVersion"`
 	Headers     []struct {
 		Name  string `json:"name"`
 		Value string `json:"value"`
@@ -50,15 +53,15 @@ type harResponse struct {
 	Content struct {
 		Size        int    `json:"size"`
 		MimeType    string `json:"mimeType"`
-		Compression int    `json:"compression"`
+		// Compression int    `json:"compression"`
 		Encoding    string `json:""encoding"`
 		Text        string `json:"text"`
 	} `json:"content"`
-	RedirectURL  string      `json:"redirectURL"`
-	HeadersSize  int         `json:"headersSize"`
-	BodySize     int         `json:"bodySize"`
-	TransferSize int         `json:"_transferSize"`
-	Error        interface{} `json:"_error"`
+	// RedirectURL  string      `json:"redirectURL"`
+	// HeadersSize  int         `json:"headersSize"`
+	// BodySize     int         `json:"bodySize"`
+	// TransferSize int         `json:"_transferSize"`
+	// Error        interface{} `json:"_error"`
 }
 
 type harRequest struct {

@@ -33,6 +33,9 @@
 	],
 	"Log": {
 		"success": true,
-		"fail": true
-	}
+		"fail": true,
+		"redirect": true
+	},
+	"SameDomain": true,
+	"AutoGenIndex": true
 }

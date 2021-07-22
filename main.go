@@ -35,7 +35,10 @@ type Config struct {
 	Log          struct {
 		Success bool `json:"success"`
 		Fail    bool `json:"fail"`
+		Redirect    bool `json:"redirect"`
 	} `json:"Log"`
+	AutoGenIndex bool `json:"AutoGenIndex"`
+	SameDomain bool `json:"SameDomain"`
 
 	ignoreHeaderMap map[string]struct{} // just make it fast
 	replaceStr []string // Contain host strings of all files, will be replace to localhost
@@ -81,7 +84,10 @@ func main(){
 	}
 	
 	//url->respone request map
-	var urlMap = make(map[string]([]RequestResponse))
+	var (
+		urlMap = make(map[string]([]RequestResponse))
+		pageRoot  = make(map[string]string)
+	)
 
 	//加载map
 	for _,harFile := range globalConfig.HarFiles {
@@ -110,13 +116,20 @@ func main(){
 					u.Scheme+`://`+u.Host,
 					`//`+u.Host,
 				}...)
-				globalConfig.replaceStr = relist(globalConfig.replaceStr)
-				urlMap[u.Path] = append(urlMap[u.Path], RequestResponse{
+
+				linkPath := u.Path
+				if !globalConfig.SameDomain {linkPath = "/"+u.Host+u.Path}
+				if strings.Contains(v.Response.Content.MimeType, "text/html") {
+					pageRoot[linkPath] = harJson.Log.Pages[0].Title + " (" + linkPath + ")"
+				} else if strings.Contains(v.Response.Content.MimeType, "font") {
+					linkPath = u.Path
+				}
+				urlMap[linkPath] = append(urlMap[linkPath], RequestResponse{
 					req: harRequest{
 						Id: fmt.Sprintf("=> %s", harFile),
 						Method: v.Request.Method,
 						Url: u.String(),
-						Path: u.Path,
+						Path: linkPath,
 						Query: u.Query(),
 						Fragment: u.EscapedFragment(),
 						PostData: v.Request.PostData.Text,
@@ -125,9 +138,17 @@ func main(){
 				})
 			}
 		}
+		globalConfig.replaceStr = relist(globalConfig.replaceStr)
 	}
 
 	log.Println(`已加载路径`, len(urlMap), `条`)
+	if !globalConfig.AutoGenIndex {
+		for pageurl,_ := range pageRoot {
+			log.Println(`页面根路径`, pageurl)
+		}
+	} else {
+		log.Println(`将自动生成主页`)
+	}
 
 	s := partWeb.New(&http.Server{
 		Addr: globalConfig.ListenAddr,
@@ -145,8 +166,23 @@ func main(){
 	s.Handle(map[string]func(http.ResponseWriter,*http.Request){
 		`/`:func(w http.ResponseWriter,r *http.Request){
 			defer r.Body.Close()
-			var path string = r.URL.Path
+			var (
+				path string = r.URL.Path
+				preLen int
+			)
 			
+			//find host
+			if _,ok := urlMap[path];!ok {
+				if ref := r.Header.Get("Referer");ref != `` {
+					if u,e := url.Parse(ref);e == nil {
+						host := "/" + strings.Split(u.Path, "/")[1]
+						preLen = len(host)
+						path = host + path
+						if globalConfig.Log.Redirect {log.Println(`[->]`, path)}
+					}
+				}
+			}
+
 			if vs,ok := urlMap[path];ok {
 				
 				var maxV RequestResponse
@@ -197,9 +233,9 @@ func main(){
 
 					//Content
 					if strings.Contains(maxV.res.Content.MimeType, `text/html`) {
-						if globalConfig.Log.Success {log.Println(`[✔]`, maxV.req.Url)}
 						for _,v :=range globalConfig.replaceStr {
-							responseData = bytes.ReplaceAll(responseData, []byte(v), []byte{})
+							host := strings.Split(v, "//")[1]
+							responseData = bytes.ReplaceAll(responseData, []byte(v), []byte(webServerAddr+"/"+host))
 						}
 						for _,v :=range globalConfig.RemoveString {
 							responseData = bytes.ReplaceAll(responseData, []byte(v), []byte{})
@@ -217,10 +253,29 @@ func main(){
 					return
 				}
 			} else if globalConfig.Log.Fail {
-				log.Println(`[✖]`, path)
+				if preLen != 0 {
+					log.Println(`[✖]`, "/"+path[preLen:])
+				} else {
+					log.Println(`[✖]`,path)
+				}
 			}
 
-			if path == `/` {path = `index.html`}
+			if preLen != 0 {
+				path = "/"+path[preLen:]
+			}
+
+			if path == `/` {
+				if globalConfig.AutoGenIndex {
+					var responseData string
+					for pageurl,pagetitle := range pageRoot {
+						responseData += `<a target="_blank" href="`+pageurl+`">`+pagetitle+`</a><br >`
+					}
+					w.Write([]byte(responseData))
+					return
+				} else {
+					path = `index.html`
+				}
+			}
 			http.ServeFile(w, r, path)
 		},
 		`/exit`:func(w http.ResponseWriter,r *http.Request){
