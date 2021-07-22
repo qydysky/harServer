@@ -6,7 +6,6 @@ import (
 	"time"
 	"flag"
 	"bytes"
-	"unicode"
 	"strings"
 	"context"
 	"net/url"
@@ -16,7 +15,6 @@ import (
 
 	part "github.com/qydysky/part"
 	partWeb "github.com/qydysky/part/web"
-	reqf "github.com/qydysky/part/reqf"
 	compress "github.com/qydysky/part/compress"
 )
 
@@ -92,12 +90,6 @@ func main(){
 			log.Println(`读取har错误`, harFile)
 			continue
 		} else {
-			t := make([]byte, utf8.RuneCountInString(harByte))
-			i := 0
-			for _, r := range harByte {
-				t[i] = byte(r)
-				i++
-			}
 			log.Println(`已读取文件`, harFile)
 		}
 	
@@ -207,21 +199,11 @@ func main(){
 					//Content
 					if strings.Contains(maxV.res.Content.MimeType, `text/html`) {
 						if globalConfig.Log.Success {log.Println(`[✔]`, maxV.req.Url)}
-						r := reqf.New()
-						if e := r.Reqf(reqf.Rval{
-							Url: maxV.req.Url,
-							Timeout: 5000,
-						});e != nil {
-							log.Println(e)
-						} else {
-							responseData = r.Respon
-						}
-						
 						for _,v :=range globalConfig.replaceStr {
-							responseData = bytes.ReplaceAll(responseData, []byte(v), []byte(webServerAddr))
+							responseData = bytes.ReplaceAll(responseData, []byte(v), []byte{})
 						}
 						for _,v :=range globalConfig.RemoveString {
-							responseData = bytes.ReplaceAll(responseData, []byte(v), []byte(""))
+							responseData = bytes.ReplaceAll(responseData, []byte(v), []byte{})
 						}
 					}
 

@@ -1,0 +1,1 @@
+.\harSer.exe -c .\main.json
