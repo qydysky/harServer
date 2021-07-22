@@ -6,14 +6,17 @@ import (
 	"time"
 	"flag"
 	"bytes"
+	"unicode"
 	"strings"
 	"context"
 	"net/url"
 	"net/http"
 	"encoding/json"
+	"encoding/base64"
 
 	part "github.com/qydysky/part"
 	partWeb "github.com/qydysky/part/web"
+	reqf "github.com/qydysky/part/reqf"
 	compress "github.com/qydysky/part/compress"
 )
 
@@ -22,25 +25,79 @@ type RequestResponse struct {
 	res harResponse
 }
 
+type Config struct {
+	ListenAddr     string   `json:"ListenAddr"`
+	HarFiles       []string `json:"HarFiles"`
+	ResponseHeader []struct {
+		Name  string `json:"Name"`
+		Value string `json:"Value"`
+	} `json:"ResponseHeader"`
+	IgnoreHeader []string `json:"IgnoreHeader"`
+	RemoveString []string `json:"RemoveString"`
+	Log          struct {
+		Success bool `json:"success"`
+		Fail    bool `json:"fail"`
+	} `json:"Log"`
+
+	ignoreHeaderMap map[string]struct{} // just make it fast
+	replaceStr []string // Contain host strings of all files, will be replace to localhost
+}
+
 func main(){
 
-	var listenAddr = flag.String("l", "127.0.0.1:2222", "-l listen address(eg. 127.0.0.1:2222)(default: 127.0.0.1:2222)")
-	var harFiles = flag.String("f", "test.har", "-f har files(eg. test.har,test1.har)(default: test.har)")
-	flag.Parse()
-	log.Println(`使用监听地址`, *listenAddr)
-	log.Println(`使用hars文件`, *harFiles)
+	//全局配置
+	var globalConfig Config
 
-	var (
-		urlMap = make(map[string]([]RequestResponse))
-		removeStr = []string{"integrity=", "https:", "http:"}
-		replaceStr = []string{}
-	)
-	for _,harFile := range strings.Split(*harFiles, ",") {
-		harByte := ReadHar(harFile)
+	//加载配置
+	{
+		var (
+			listenAddr = flag.String("l", "", "-l listen address(eg. 127.0.0.1:2222)")
+			harFiles = flag.String("f", "", "-f har files(eg. test.har,test1.har)")
+			config = flag.String("c", "", "-c config file(eg. main.json)")
+		)
+		flag.Parse()
+
+		if configByte := Read(*config);len(configByte) != 0 {
+			if e := json.Unmarshal(configByte, &globalConfig);e != nil {
+				log.Println(`配置文件错误`, e)
+			} else {
+				log.Println(`已加载配置文件`, *config)
+				globalConfig.ignoreHeaderMap = make(map[string]struct{})
+				for _,v :=range globalConfig.IgnoreHeader {
+					globalConfig.ignoreHeaderMap[strings.ToLower(v)] = struct{}{}
+				}
+			}
+		}
+		if *listenAddr != `` {
+			log.Println(`使用监听地址`, *listenAddr)
+			globalConfig.ListenAddr = *listenAddr
+		}
+		if *harFiles != `` {
+			log.Println(`使用hars文件`, *harFiles)
+			globalConfig.HarFiles = append(globalConfig.HarFiles, strings.Split(*harFiles, ",")...)
+		}
+		if globalConfig.ListenAddr == `` || len(globalConfig.HarFiles) == 0 {
+			log.Println(`未指定监听地址或hars文件`)
+			return
+		}
+	}
+	
+	//url->respone request map
+	var urlMap = make(map[string]([]RequestResponse))
+
+	//加载map
+	for _,harFile := range globalConfig.HarFiles {
+		harByte := Read(harFile)
 		if len(harByte) == 0 {
 			log.Println(`读取har错误`, harFile)
 			continue
 		} else {
+			t := make([]byte, utf8.RuneCountInString(harByte))
+			i := 0
+			for _, r := range harByte {
+				t[i] = byte(r)
+				i++
+			}
 			log.Println(`已读取文件`, harFile)
 		}
 	
@@ -54,13 +111,20 @@ func main(){
 			if u,e := url.Parse(v.Request.URL);e != nil {
 				log.Println("接口处理错误", e)
 				continue
-			} else if v.Response.Status != 0 {
-				replaceStr = append(replaceStr, u.Scheme+`://`+u.Host)
-				replaceStr = append(replaceStr, u.Host)
+			} else if v.Response.Content.Size != 0 && v.Response.Content.Text == `` {
+				continue
+			} else {
+				globalConfig.replaceStr = append(globalConfig.replaceStr, []string{
+					u.Scheme+`://`+u.Host,
+					`//`+u.Host,
+					u.Host,
+				}...)
+				globalConfig.replaceStr = relist(globalConfig.replaceStr)
 				urlMap[u.Path] = append(urlMap[u.Path], RequestResponse{
 					req: harRequest{
-						Id: fmt.Sprintf("F:%s;I:%s;", harFile, v.Connection),
+						Id: fmt.Sprintf("=> %s", harFile),
 						Method: v.Request.Method,
+						Url: u.String(),
 						Path: u.Path,
 						Query: u.Query(),
 						Fragment: u.EscapedFragment(),
@@ -75,12 +139,12 @@ func main(){
 	log.Println(`已加载路径`, len(urlMap), `条`)
 
 	s := partWeb.New(&http.Server{
-		Addr: *listenAddr,
+		Addr: globalConfig.ListenAddr,
 		WriteTimeout:  time.Second * time.Duration(10),
 	})
 
 	var webServerAddr string
-	if addr := strings.Split(*listenAddr, ":"); addr[0] == "0.0.0.0" {
+	if addr := strings.Split(globalConfig.ListenAddr, ":"); addr[0] == "0.0.0.0" {
 		webServerAddr = `http://`+part.Sys().GetIntranetIp()+`:`+addr[1]
 	} else {
 		webServerAddr = `http://`+s.Server.Addr
@@ -94,23 +158,19 @@ func main(){
 			
 			if vs,ok := urlMap[path];ok {
 				
-				maxV := match(r, vs)
+				var maxV RequestResponse
+				if len(vs) != 1 {
+					maxV = match(r, vs)
+				} else {
+					maxV = vs[0]
+				}
 
 				if maxV.req.Id != `` {
-					log.Println(`[ok] req:`, path, maxV.req.Id)
+					if globalConfig.Log.Success {log.Println(`[✔]`, path, maxV.req.Id)}
 
-					//COS
-					w.Header().Set("Access-Control-Allow-Origin", "*")//允许访问所有域
-					w.Header().Add("Access-Control-Allow-Headers", "*")//header的类型
-	
 					//Headers
-					var contentEncoding string
 					for _,header :=range maxV.res.Headers {
-						if header.Name == "content-encoding" || header.Value == "gzip" {
-							contentEncoding = header.Value
-						}
-						if header.Name == "content-security-policy" ||
-						   header.Name == "content-length" {continue}
+						if _,ok := globalConfig.ignoreHeaderMap[strings.ToLower(header.Name)];ok {continue}
 						w.Header().Set(header.Name, header.Value)
 					}
 	
@@ -125,21 +185,47 @@ func main(){
 							Secure: cookie.Secure,
 						}).String())
 					}
-	
+
+					//custom headers
+					for _,v :=range globalConfig.ResponseHeader {
+						w.Header().Set(v.Name, v.Value)
+					}
+						
 					//statusCode
-					w.WriteHeader(maxV.res.Status)
+					if maxV.res.Status != 0 {
+						w.WriteHeader(maxV.res.Status)
+					}
 	
-					//Content
 					var responseData = []byte(maxV.res.Content.Text)
+					//Content base64 decode
+					if maxV.res.Content.Encoding == `base64` {
+						if _,e := base64.StdEncoding.Decode(responseData, responseData);e != nil {
+							log.Println(e)
+						}
+					}
+
+					//Content
 					if strings.Contains(maxV.res.Content.MimeType, `text/html`) {
-						for _,v :=range replaceStr {
+						if globalConfig.Log.Success {log.Println(`[✔]`, maxV.req.Url)}
+						r := reqf.New()
+						if e := r.Reqf(reqf.Rval{
+							Url: maxV.req.Url,
+							Timeout: 5000,
+						});e != nil {
+							log.Println(e)
+						} else {
+							responseData = r.Respon
+						}
+						
+						for _,v :=range globalConfig.replaceStr {
 							responseData = bytes.ReplaceAll(responseData, []byte(v), []byte(webServerAddr))
 						}
-						for _,v :=range removeStr {
+						for _,v :=range globalConfig.RemoveString {
 							responseData = bytes.ReplaceAll(responseData, []byte(v), []byte(""))
 						}
 					}
-					if contentEncoding == "gzip" {
+
+					if w.Header().Get("Content-Encoding") == "gzip" {
 						var e error
 						responseData,e = compress.InGzip(responseData, -1)
 						if e != nil {
@@ -149,8 +235,8 @@ func main(){
 					w.Write(responseData)
 					return
 				}
-			} else {
-				log.Println(`[no] `, path)
+			} else if globalConfig.Log.Fail {
+				log.Println(`[✖]`, path)
 			}
 
 			if path == `/` {path = `index.html`}
@@ -168,7 +254,7 @@ func main(){
 	}
 }
 
-func ReadHar(src string) []byte {
+func Read(src string) []byte {
 	f := part.File()
 	content := f.FileWR(part.Filel{
 		File:src,
@@ -203,7 +289,9 @@ func match(req *http.Request,harRRs []RequestResponse) (maxV RequestResponse) {
 		}
 
 		for k,v :=range reqPostData {
-			if harRR.req.PostData[k] == v {
+			if len(harRR.req.PostData) <= k {
+				break
+			} else if harRR.req.PostData[k] == v {
 				diff += 1
 			} else {
 				break
@@ -217,3 +305,19 @@ func match(req *http.Request,harRRs []RequestResponse) (maxV RequestResponse) {
 	}
 	return
 }
+
+func relist(s []string) (st []string) {
+	for k,v :=range s {
+		for sk,sv :=range st {
+			if len(v) > len(sv) {
+				st = append(st[:sk], append([]string{v}, st[sk:]...)...)
+				break
+			}
+		}
+		if len(st) != k+1 {
+			st = append(st, v)
+		}
+	}
+
+	return
+} 

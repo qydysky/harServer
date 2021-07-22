@@ -7,50 +7,7 @@ import (
 
 type Har struct {
 	Log struct {
-		Version string `json:"version"`
-		Creator struct {
-			Name    string `json:"name"`
-			Version string `json:"version"`
-		} `json:"creator"`
-		Pages   []interface{} `json:"pages"`
 		Entries []struct {
-			Initiator struct {
-				Type  string `json:"type"`
-				Stack struct {
-					CallFrames []struct {
-						FunctionName string `json:"functionName"`
-						ScriptID     string `json:"scriptId"`
-						URL          string `json:"url"`
-						LineNumber   int    `json:"lineNumber"`
-						ColumnNumber int    `json:"columnNumber"`
-					} `json:"callFrames"`
-					Parent struct {
-						Description string `json:"description"`
-						CallFrames  []struct {
-							FunctionName string `json:"functionName"`
-							ScriptID     string `json:"scriptId"`
-							URL          string `json:"url"`
-							LineNumber   int    `json:"lineNumber"`
-							ColumnNumber int    `json:"columnNumber"`
-						} `json:"callFrames"`
-						Parent struct {
-							Description string `json:"description"`
-							CallFrames  []struct {
-								FunctionName string `json:"functionName"`
-								ScriptID     string `json:"scriptId"`
-								URL          string `json:"url"`
-								LineNumber   int    `json:"lineNumber"`
-								ColumnNumber int    `json:"columnNumber"`
-							} `json:"callFrames"`
-						} `json:"parent"`
-					} `json:"parent"`
-				} `json:"stack"`
-			} `json:"_initiator"`
-			Priority     string `json:"_priority"`
-			ResourceType string `json:"_resourceType"`
-			Cache        struct {
-			} `json:"cache"`
-			Connection string `json:"connection"`
 			Request    struct {
 				Method      string `json:"method"`
 				URL         string `json:"url"`
@@ -77,19 +34,6 @@ type Har struct {
 				} `json:"postData"`
 			} `json:"request"`
 			Response harResponse `json:"response"`
-			ServerIPAddress string    `json:"serverIPAddress"`
-			StartedDateTime time.Time `json:"startedDateTime"`
-			Time            float64   `json:"time"`
-			Timings         struct {
-				Blocked         float64 `json:"blocked"`
-				DNS             float64 `json:"dns"`
-				Ssl             int     `json:"ssl"`
-				Connect         float64 `json:"connect"`
-				Send            float64 `json:"send"`
-				Wait            float64 `json:"wait"`
-				Receive         float64 `json:"receive"`
-				BlockedQueueing float64 `json:"_blocked_queueing"`
-			} `json:"timings"`
 		} `json:"entries"`
 	} `json:"log"`
 }
@@ -107,6 +51,7 @@ type harResponse struct {
 		Size        int    `json:"size"`
 		MimeType    string `json:"mimeType"`
 		Compression int    `json:"compression"`
+		Encoding    string `json:""encoding"`
 		Text        string `json:"text"`
 	} `json:"content"`
 	RedirectURL  string      `json:"redirectURL"`
@@ -119,6 +64,7 @@ type harResponse struct {
 type harRequest struct {
 	Id string
 	Method string
+	Url string
 	Path string
 	Query url.Values
 	Fragment string

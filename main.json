@@ -1,0 +1,38 @@
+{
+	"ListenAddr": "127.0.0.1:2222",
+	"HarFiles": [
+		"gitbook.har"
+	],
+	"ResponseHeader": [
+		{
+			"Name": "Access-Control-Allow-Origin",
+			"Value": "*"
+		},
+		{
+			"Name": "Access-Control-Allow-Methods",
+			"Value": "POST, GET, PUT, OPTIONS, DELETE"
+		},
+		{
+			"Name": "Access-Control-Allow-Headers",
+			"Value": "*,content-type,authorization"
+		},
+		{
+			"Name": "Content-Encoding",
+			"Value": "gzip"
+		}
+	],
+	"IgnoreHeader": [
+		"content-security-policy",
+		"content-length",
+		"Content-Encoding"
+	],
+	"RemoveString": [
+		"https:",
+		"http:",
+		"integrity="
+	],
+	"Log": {
+		"success": true,
+		"fail": true
+	}
+}
